@@ -50,6 +50,7 @@ set "PYTHON_DIR=%PORTABLE_DIR%\python"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
 set "UV_DIR=%PORTABLE_DIR%\uv"
 set "UV_EXE=%UV_DIR%\uv.exe"
+set "UV_CACHE_DIR=%PORTABLE_DIR%\uv-cache"
 set "GIT_DIR=%PORTABLE_DIR%\git"
 set "GIT_EXE=%GIT_DIR%\bin\git.exe"
 
@@ -190,6 +191,8 @@ if /I "!NEEDS_INSTALL!"=="true" (
     pushd "%APP_DIR%"
     "%UV_EXE%" pip install -r "!REQUIREMENTS!" --python "%APP_PYTHON%"
     if !ERRORLEVEL! neq 0 ( echo ERROR: Dependency installation failed. && pause && exit /b 1 )
+    echo Cleaning up package cache...
+    "%UV_EXE%" cache clean
     popd
 )
 
