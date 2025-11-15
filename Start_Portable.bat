@@ -50,6 +50,7 @@ set "PYTHON_DIR=%PORTABLE_DIR%\python"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
 set "UV_DIR=%PORTABLE_DIR%\uv"
 set "UV_EXE=%UV_DIR%\uv.exe"
+set "UV_CACHE_DIR=%PORTABLE_DIR%\uv-cache"
 set "GIT_DIR=%PORTABLE_DIR%\git"
 set "GIT_EXE=%GIT_DIR%\bin\git.exe"
 
@@ -152,7 +153,7 @@ if not exist "%APP_DIR%\.git" (
             set "NEEDS_INSTALL=true"
             set "DOWNLOAD_RUN=false"
             popd
-            powershell -Command "(Get-Content '%CONFIG_FILE%') -replace 'DOWNLOAD_RUN=.*', 'DOWNLOAD_RUN=false' | Set-Content '%CONFIG_FILE%'"
+			powershell -Command "$configPath = '%CONFIG_FILE%'; $content = Get-Content -ErrorAction SilentlyContinue $configPath; if ($content -match 'DOWNLOAD_RUN=') { ($content -replace 'DOWNLOAD_RUN=.*', 'DOWNLOAD_RUN=false') | Set-Content -ErrorAction SilentlyContinue $configPath; } else { Add-Content -Path $configPath -Value 'DOWNLOAD_RUN=false'; }"
 
             :: SELF-UPDATE CHECK
             call :self_update_check
@@ -190,6 +191,8 @@ if /I "!NEEDS_INSTALL!"=="true" (
     pushd "%APP_DIR%"
     "%UV_EXE%" pip install -r "!REQUIREMENTS!" --python "%APP_PYTHON%"
     if !ERRORLEVEL! neq 0 ( echo ERROR: Dependency installation failed. && pause && exit /b 1 )
+    echo Cleaning up package cache...
+    "%UV_EXE%" cache clean
     popd
 )
 
@@ -211,7 +214,7 @@ if /I "!DOWNLOAD_RUN!"=="false" (
     ::set "PYTHONPATH=%APP_DIR%"
     "%APP_PYTHON%" "download_models.py"
     if !ERRORLEVEL! equ 0 (
-        powershell -Command "(Get-Content -ErrorAction SilentlyContinue '%CONFIG_FILE%') -replace 'DOWNLOAD_RUN=.*', 'DOWNLOAD_RUN=true' | Set-Content -ErrorAction SilentlyContinue '%CONFIG_FILE%'"
+		powershell -Command "$configPath = '%CONFIG_FILE%'; $content = Get-Content -ErrorAction SilentlyContinue $configPath; if ($content -match 'DOWNLOAD_RUN=') { ($content -replace 'DOWNLOAD_RUN=.*', 'DOWNLOAD_RUN=true') | Set-Content -ErrorAction SilentlyContinue $configPath; } else { Add-Content -Path $configPath -Value 'DOWNLOAD_RUN=true'; }"
     )
     popd
 )
@@ -372,5 +375,3 @@ goto :eof
     "%PYTHON_EXE%" "%PYTHON_DIR%\get-pip.py" --no-warn-script-location
     del "%PYTHON_DIR%\get-pip.py"
 goto :eof
-
-

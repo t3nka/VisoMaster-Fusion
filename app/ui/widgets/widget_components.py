@@ -20,6 +20,7 @@ from app.ui.widgets.actions import graphics_view_actions
 from app.ui.widgets.actions import card_actions
 from app.ui.widgets.actions import save_load_actions
 import app.helpers.miscellaneous as misc_helpers
+from app.helpers.miscellaneous import get_video_rotation
 
 if TYPE_CHECKING:
     from app.ui.main_ui import MainWindow
@@ -204,16 +205,20 @@ class TargetMediaCardButton(CardButton):
 
         frame = None
         max_frames_number = 0  # Initialize max_frames_number for either video or image
+        rotation_angle = 0  # MODIFICATION: Added rotation variable
 
         if self.file_type == "video":
+            # MODIFICATION: Get video rotation metadata before loading
+            rotation_angle = get_video_rotation(self.media_path)
+            main_window.video_processor.media_rotation = rotation_angle
             media_capture = cv2.VideoCapture(self.media_path)
             if not media_capture.isOpened():
-                print(f"Error opening video {self.media_path}")
+                print(f"[ERROR] Error opening video {self.media_path}")
                 return  # If the video cannot be opened, exit the function
 
             media_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
             max_frames_number = int(media_capture.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
-            _, frame = misc_helpers.read_frame(media_capture)
+            _, frame = misc_helpers.read_frame(media_capture, rotation_angle)
             main_window.video_processor.media_capture = media_capture
             self.media_capture = media_capture
             main_window.video_processor.fps = media_capture.get(cv2.CAP_PROP_FPS)
@@ -225,6 +230,8 @@ class TargetMediaCardButton(CardButton):
             main_window.video_processor.max_frame_number = max_frames_number
 
         elif self.file_type == "webcam":
+            # MODIFICATION: Set rotation to 0 for webcam
+            main_window.video_processor.media_rotation = 0
             res_width, res_height = self.main_window.control[
                 "WebcamMaxResSelection"
             ].split("x")
@@ -233,7 +240,7 @@ class TargetMediaCardButton(CardButton):
             media_capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(res_width))
             media_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(res_height))
             max_frames_number = 999999
-            _, frame = misc_helpers.read_frame(media_capture)
+            _, frame = misc_helpers.read_frame(media_capture, 0)  # 0 for webcam
             main_window.video_processor.media_capture = media_capture
             self.media_capture = media_capture
             main_window.video_processor.fps = media_capture.get(cv2.CAP_PROP_FPS)
@@ -358,9 +365,9 @@ class TargetMediaCardButton(CardButton):
         # Send the file to the trash
         if os.path.exists(self.media_path):
             send2trash(self.media_path)
-            print(f"{self.media_path} has been sent to the trash.")
+            print(f"[INFO] {self.media_path} has been sent to the trash.")
         else:
-            print(f"{self.media_path} does not exist.")
+            print(f"[ERROR] {self.media_path} does not exist.")
 
         self.deleteLater()
 
@@ -479,7 +486,7 @@ class TargetFaceCardButton(CardButton):
         else:
             # Embedding not found or empty, calculate it now
             print(
-                f"TargetFaceCardButton {self.face_id}: Calculating missing embedding for model '{embedding_swap_model}'..."
+                f"[INFO] TargetFaceCardButton {self.face_id}: Calculating missing embedding for model '{embedding_swap_model}'..."
             )
             if self.cropped_face is None or self.cropped_face.size == 0:
                 print(
@@ -549,7 +556,7 @@ class TargetFaceCardButton(CardButton):
                     # Store the newly calculated embedding
                     self.embedding_store[embedding_swap_model] = new_embedding
                     print(
-                        f"TargetFaceCardButton {self.face_id}: Stored new embedding for '{embedding_swap_model}'."
+                        f"[INFO] TargetFaceCardButton {self.face_id}: Stored new embedding for '{embedding_swap_model}'."
                     )
                     return new_embedding
                 else:
@@ -694,12 +701,10 @@ class TargetFaceCardButton(CardButton):
             input_face_button = main_window.input_faces.get(first_input_face_id)
 
             if input_face_button:
-                
                 # This lock ensures that only one thread (either the main thread
                 # during job loading, or a FrameWorker) can
                 # check the cache and generate the K/V map at a time.
                 with main_window.models_processor.kv_extraction_lock:
-                    
                     # 1. Check the cache *inside* the lock.
                     # If another thread generated it while we were waiting,
                     # we can use it directly.
@@ -712,14 +717,21 @@ class TargetFaceCardButton(CardButton):
                     else:
                         # Cache missing. We are the first thread.
                         # Generate, cache, and assign the map.
-                        print(f"Generating K/V map for input face: {input_face_button.media_path}")
+                        print(
+                            f"[INFO] Generating K/V map for input face: {input_face_button.media_path}"
+                        )
                         try:
                             from PIL import Image
+
                             models_processor = main_window.models_processor
-                            
+
                             # Prepare the image for the extractor
-                            cropped_face_np = input_face_button.cropped_face # BGR Numpy
-                            pil_img = Image.fromarray(cropped_face_np[..., ::-1]) # RGB PIL
+                            cropped_face_np = (
+                                input_face_button.cropped_face
+                            )  # BGR Numpy
+                            pil_img = Image.fromarray(
+                                cropped_face_np[..., ::-1]
+                            )  # RGB PIL
 
                             if pil_img.size != (512, 512):
                                 pil_img = pil_img.resize(
@@ -733,14 +745,14 @@ class TargetFaceCardButton(CardButton):
                             # Cache and assign
                             input_face_button.kv_map = kv_map
                             self.assigned_kv_map = kv_map
-                            print(f"Generated and cached K/V map.")
-                        
+                            print("[INFO] Generated and cached K/V map.")
+
                         except Exception as e:
-                            print(f"Error generating K/V map: {e}")
+                            print(f"[ERROR] Error generating K/V map: {e}")
                             traceback.print_exc()
-                            input_face_button.kv_map = {} # Empty cache in case of error
+                            input_face_button.kv_map = {}  # Empty cache in case of error
                             self.assigned_kv_map = {}
-                
+
         if main_window.selected_target_face_id == self.face_id:
             main_window.current_kv_tensors_map = self.assigned_kv_map
 
@@ -985,16 +997,16 @@ class InputFaceCardButton(CardButton):
             try:
                 if os.path.exists(self.kv_map):
                     os.remove(self.kv_map)
-                    print(f"Removed K/V data file: {self.kv_map}")
+                    print(f"[INFO] Removed K/V data file: {self.kv_map}")
             except Exception as e:
-                print(f"Error removing K/V data file {self.kv_map}: {e}")
+                print(f"[ERROR] Error removing K/V data file {self.kv_map}: {e}")
 
         if isinstance(self.kv_map, str) and os.path.exists(self.kv_map):
             try:
                 os.remove(self.kv_map)
-                print(f"Removed K/V data file: {self.kv_map}")
+                print(f"[INFO] Removed K/V data file: {self.kv_map}")
             except Exception as e:
-                print(f"Error removing K/V data file {self.kv_map}: {e}")
+                print(f"[ERROR] Error removing K/V data file {self.kv_map}: {e}")
 
     def _remove_face_from_lists(self):
         main_window = self.main_window
@@ -1054,9 +1066,9 @@ class InputFaceCardButton(CardButton):
         # Send the file to the trash
         if os.path.exists(self.media_path):
             send2trash(self.media_path)
-            print(f"{self.media_path} has been sent to the trash.")
+            print(f"[INFO] {self.media_path} has been sent to the trash.")
         else:
-            print(f"{self.media_path} does not exist.")
+            print(f"[ERROR] {self.media_path} does not exist.")
 
         common_widget_actions.refresh_frame(main_window)
         if not main_window.input_faces:
